@@ -7,14 +7,14 @@ from time import sleep, time
 
 ROOT_URL = "https://apps.ualberta.ca"
 MAIN_URL = "https://apps.ualberta.ca/catalogue"
-DELAY_TIME = 4
+DELAY_TIME = 2
 
 
 def write_to_file(name_of_file, data):
     """
     Writes scraped data a json file.
     """
-    with open(f'../data/{name_of_file}.json', 'w') as file:
+    with open(f'./data/{name_of_file}.json', 'w') as file:
         json.dump(data, file)
 
 
@@ -27,7 +27,7 @@ def get_faculties():
     catalog_page = requests.get(MAIN_URL).text
     course_soup = bs(catalog_page, 'html.parser')
 
-    faculty_div = course_soup.find('div', {'class': 'col-md-6'})
+    faculty_div = course_soup.find('div', {'class': 'col col-md-6 col-lg-5 offset-lg-2'})
     faculties = faculty_div.findAll('li')
 
     faculty_data = dict()
@@ -66,25 +66,37 @@ def get_subjects(faculty_data):
         faculty_link = faculty_data[faculty_code]["faculty_link"]
         faculty_page = requests.get(faculty_link).text
         subject_soup = bs(faculty_page, 'html.parser')
-        subject_div = subject_soup.find('div', {'class': 'col-md-6'})
-        subjects = subject_div.findAll('li')
+        content_div = subject_soup.find('div', {'class': 'content'})
+        subject_div = content_div.find('div', {'class': 'container'})
+        subject_div_list = subject_div.find('ul')
+        subjects = subject_div_list.findAll('li')
 
         for subject in subjects:
-            subject_title, subject_link = [str(subject.find('a').text), subject.find('a').get('href')]
-            subject_code, subject_name = subject_title.split(' - ', 1)
-            subject_link = ROOT_URL + subject_link
-            subject_data[subject_code] = {}
-            subject_data[subject_code]["name"] = ''
-            subject_data[subject_code]['link'] = ''
-            subject_data[subject_code]['faculties'] = []
+            try:
+                subject_title, subject_link = [str(subject.find('a').text), subject.find('a').get('href')]
+                subject_code, subject_name = subject_title.split(' - ', 1)
+                subject_link = ROOT_URL + subject_link
+                subject_data[subject_code] = {}
+                subject_data[subject_code]["name"] = subject_name  # Assuming you want to store the subject name
+                subject_data[subject_code]['link'] = subject_link  # Assuming you want to store the full link
+                subject_data[subject_code]['faculties'] = []
+            except ValueError as e:
+                if "not enough values to unpack" in str(e):
+                    print(f"Skipping subject due to unpacking error: {subject}")
+                    continue  # Skip to the next subject
+            except Exception as e:
+                print(f"Error processing subject: {subject}")
+                print(f"Exception: {e}")
 
     for faculty_code, faculty_value in faculty_data.items():
         sleep(DELAY_TIME)
         faculty_link = faculty_data[faculty_code]["faculty_link"]
         faculty_page = requests.get(faculty_link).text
         subject_soup = bs(faculty_page, 'html.parser')
-        subject_div = subject_soup.find('div', {'class': 'col-md-6'})
-        subjects = subject_div.findAll('li')
+        content_div = subject_soup.find('div', {'class': 'content'})
+        subject_div = content_div.find('div', {'class': 'container'})
+        subject_div_list = subject_div.find('ul')
+        subjects = subject_div_list.findAll('li')
 
         for subject in subjects:
             subject_title, subject_link = [str(subject.find('a').text), subject.find('a').get('href')]
@@ -110,10 +122,10 @@ def get_courses(subject_data):
         subject_url = subject_data[subject_code]["link"]
         subject_page = requests.get(subject_url).text 
         course_soup = bs(subject_page, 'html.parser')
-        courses = course_soup.findAll('div', {'class': 'card-body'})
+        courses = course_soup.findAll('div', {'class': 'course first'})
 
         for course in courses:
-            course_code, course_name = course.find('h4', {'class': 'flex-grow-1'}).text.strip().split('\n')[0].split(' - ', 1)
+            course_code, course_name = course.find('h2', {'class': 'flex-grow-1'}).text.strip().split('\n')[0].split(' - ', 1)
             course_link = ROOT_URL + course.find('a').get('href')
             course_weight = course.find('b').text[2:][:2].strip()
 
@@ -177,63 +189,6 @@ def get_courses(subject_data):
 def get_class_schedules(course_data):
     """
     Get the class schedules for a specific course in the different terms.
-    Format Eg.:
-    "CMPUT 404": {
-        "Spring Term 2021": {
-            "Lectures": {
-                "Lecture A1": {
-                    "Code": Int,
-                    "Remote": Boolean,
-                    "Capacity": Int,
-                    "Days": "String",
-                    "Start Date": Date,
-                    "End Date": Date,
-                    "Start Time": DateTime,
-                    "End Time": DateTime,
-                    "Room Number": String
-                },
-                "Lecture A2": {
-                    ...
-                }
-            "Labs": {
-                "Lab H01": {
-                    "Code": Int,
-                    "Capacity": Int,
-                    "Days": "String",
-                    "Start Date": Date,
-                    "End Date": Date,
-                    "Start Time": DateTime,
-                    "End Time": DateTime,
-                    "Room Number": String
-                },
-                "Lab H02": {
-                    ...
-                }
-            },
-            "Seminars": {
-                "Seminar J1": {
-                    "Code": Int,
-                    "Capacity": Int,
-                    "Days": "String",
-                    "Start Date": Date,
-                    "End Date": Date,
-                    "Start Time": DateTime,
-                    "End Time": DateTime,
-                    "Room Number": String
-                },
-                "Seminar J2": {
-                    ...
-                }
-            }
-
-            }
-            
-        },
-
-        "Winter Term 2022": {
-            ...
-        }   
-    } 
     """
     class_schedules = dict()
 
@@ -242,97 +197,85 @@ def get_class_schedules(course_data):
         course_url = course_data[course_code]["course_link"]
         course_page = requests.get(course_url).text 
         course_soup = bs(course_page, 'html.parser')
-        terms = course_soup.findAll('div', {'class': 'card mt-4 dv-card-flat'})
+        terms = course_soup.findAll('div', {'id': 'content-nav', 'class': 'nav flex-nowrap'})
         print("------------------------------------------------------------------")
         print(f"Currently at {course_url}. ")
         print("------------------------------------------------------------------")
         class_schedules[course_code] = {}
 
         for term in terms:
-            term_code = term.find('div', {'class': 'card-header m-0 px-3 pt-3 pb-2 bg-white d-flex'}).text.strip("\n") # Winter Term 2021, Fall Term 2021, Spring Term 2021, Summer Term 2021
-            term_code = term_code.replace(" Term ", "")      # Condensed Name: "Fall Term 2021" --> "Fall2021"
+            try:
+                term_code = term.find('a', {'class': 'nav-link active'}).text.strip()
+                term_code = term_code.replace(" Term ", "")  # Condensed Name: "Winter Term 2025" --> "Winter2025"
+                print(f"--Currently at {term_code}.")
+            except Exception as e:
+                print("No terms found")
+                continue
 
             class_schedules[course_code][term_code] = {}
+            class_types = course_soup.findAll('div', {'class': 'mb-5'})
+            print(f"Number of class types: {len(class_types)}")
 
-            class_types = term.findAll(lambda tag: tag.name == 'div' and tag.get('class') == ['col-12'])    # List that has the type of formats the course offers (lectures, labs, seminars)
-            
             for class_type in class_types:
-                class_type_name = class_type.find('h3', {'class': 'mt-2 d-none d-md-block'}).text      # Lecture, Seminar or Lab
+                try:
+                    class_type_name = class_type.find('h3').text.strip()  # Lecture, Seminar, or Lab
+                except AttributeError:  # If .text or .find('h3') fails due to NoneType
+                    print("No class type name found.", class_type_name)
+                    continue  # Skip to the next iteration in the loop
                 class_schedules[course_code][term_code][class_type_name] = []
-                
-                
-                offered_classes = class_type.findAll('div', {'class': 'col-lg-4 col-12 pb-3'})
+
+                offered_classes = class_type.findAll('tr', {'data-card-title': True})
 
                 for classes in offered_classes:
                     class_info = {}
 
-                    class_code_and_name = classes.find('strong', {'class': 'mb-0 mt-4'}).text.strip('\n')
-                    class_code = re.search(r"\(([A-Za-z0-9_]+)\)", class_code_and_name).group(1)    # Gets the value inside the paranthesis
-                    class_name = class_code_and_name.replace(f'({class_code})', '').strip(' ').strip('\n').strip(' ')
+                    section_info = classes.find('td', {'data-card-title': 'Section'}).text.strip().split('\n')
+                    class_code = section_info[-1].strip("()")  # Extract the class code
+                    class_name = section_info[0].strip()
 
-                    ems = classes.findAll('em')
+                    capacity = classes.find('td', {'data-card-title': 'Capacity'}).text.strip()
+                    class_times = classes.find('td', {'data-card-title': 'Class times'}).text.strip()
+
+                    date_pattern = r"(\d{4}-\d{2}-\d{2})"
+                    time_pattern = r"(\d{2}:\d{2})"
                     try:
-                        capacity = ems[0].text.strip("Capacity: ")
-                    except:
-                        capacity = 'NA'
-                    try:
-                        date_time_room_data = ems[1].text.strip("\n")
-                    except:
-                        date_time_room_Data = 'NA'
-                    try:
-                        start_date, end_date = re.findall(r"(\d+-\d+-\d+)", date_time_room_data)
+                        start_date, end_date = re.findall(date_pattern, class_times)
                     except:
                         start_date, end_date = ['NA', 'NA']
                     try:
-                        start_time, end_time = re.findall(r"(\d+:\d+)", date_time_room_data)
+                        start_time, end_time = re.findall(time_pattern, class_times)
                     except:
                         start_time, end_time = ['NA', 'NA']
+
+                    days_pattern = r"\((.*?)\)"
                     try:
-                        room = re.search(r"\((.*?)\)", date_time_room_data).group(1)
-                    except:
-                        room = 'NA'
-                    if len(ems) == 3:   # If Primary Instructor field is provided
-                        try:
-                            primary_instructor = ems[2].find('a').text
-                            primary_instructor_link = ems[2].find('a').get('href')
-                        except:
-                            primary_instructor = 'NA'
-                            primary_instructor_link = 'NA'
-                    else:
-                        primary_instructor = 'TBD'
-                        primary_instructor_link = 'TBD'
-                    
-                    try:
-                        pattern = "\n(.*?)\d+"
-                        days = re.search(pattern, date_time_room_data).group(1)
-                        days = list(days.strip(" "))
+                        days = re.search(days_pattern, class_times).group(1)
                     except:
                         days = 'NA'
 
-
                     class_info["class_code"] = class_code
-                    class_info["class_name"] = class_name 
+                    class_info["class_name"] = class_name
                     class_info["capacity"] = capacity
                     class_info["days"] = days
                     class_info["start_date"] = start_date
                     class_info["end_date"] = end_date
                     class_info["start_time"] = start_time
                     class_info["end_time"] = end_time
-                    class_info["room"] = room
-                    class_info["primary_instructor"] = primary_instructor
-                    class_info["primary_instructor_link"] = primary_instructor_link
+                    class_info["room"] = 'Login to view Instructor(s) and Location'  # Placeholder as room info is behind a login
 
                     class_schedules[course_code][term_code][class_type_name].append(class_info)
 
-    write_to_file('class_schedules_5', class_schedules)
+    write_to_file('class_schedules', class_schedules)
 
 
 def main():
-    print("Scraping Faculties...")
-    faculty_data = get_faculties()
+    # print("Scraping Faculties...")
+    # faculty_data = get_faculties()
+
+    faculty_data2 = {"SS": {"faculty_name": "St Stephen's College", "faculty_link": "https://apps.ualberta.ca/catalogue/faculty/ss"}}
 
     print("Scraping Subjects...")
-    subject_data = get_subjects(faculty_data)
+    subject_data = get_subjects(faculty_data2)
 
     print("Scraping Courses...")
     course_data = get_courses(subject_data)
@@ -341,7 +284,7 @@ def main():
     class_schedules = get_class_schedules(course_data)
     print("Done. Check the data folder for scraped data.")
 
-    print(end_time - start_time)
+    # print(end_time - start_time)
 
 
 if __name__ == "__main__":
